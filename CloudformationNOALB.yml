@@ -57,6 +57,32 @@ Resources:
     Properties:
       VpcId:
         Ref: vpc01583ecc607b06697
+  applicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: WebserverLB
+      Scheme: internet-facing
+      SecurityGroups:
+      - Ref: sgLoadBalancers
+      Subnets:
+      - Ref: subnet0e890506b72431427
+      - Ref: subnet0bfb0ebcee9ffab98
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: redirect
+        RedirectConfig:
+          Protocol: HTTPS
+          Port: 443
+          Host: "#{host}"
+          Path: "/#{path}"
+          Query: "#{query}"
+          StatusCode: HTTP_301
+      LoadBalancerArn: !Ref applicationLoadBalancer 
+      Port: 80
+      Protocol: HTTP
   asgWebServersASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -69,6 +95,8 @@ Resources:
       HealthCheckType: EC2
       MaxSize: '100'
       MinSize: '1'
+      TargetGroupARNs:
+      - Ref: targetgroup
       VPCZoneIdentifier:
       - Ref: subnet0e890506b72431427
       - Ref: subnet0bfb0ebcee9ffab98
@@ -88,6 +116,26 @@ Resources:
         Ebs:
           SnapshotId: snap-0e4c15b8cba3e8ae6
           VolumeSize: 8
+      UserData:
+        Fn::Base64:
+           #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          usermod -a -G apache ec2-user
+          chown -R ec2-user:apache /var/www
+          chmod 2775 /var/www
+          find /var/www -type d -exec chmod 2775 {} \;
+          find /var/www -type f -exec chmod 0664 {} \;
+          echo "<html>
+          <head>
+          <title>Hello World</title>
+          </head>
+          <body>
+          <h1>Hello World!</h1>
+          </body>
+          </html>" > /var/www/html/index.html
   sgWebServers:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -103,10 +151,23 @@ Resources:
   scalingScaleGroupSize:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      PolicyType: TargetTrackingScaling
-      StepAdjustments: []
+      AdjustmentType: ChangeInCapacity
+      PolicyType: SimpleScaling
+      Cooldown: 60
+      ScalingAdjustment: 1
       AutoScalingGroupName:
         Ref: asgWebServersASG
+  targetgroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      Name: WebserverTSG
+      TargetType: instance
+      Protocol: HTTP
+      Port: 80
+      VpcId: 
+        Ref: vpc01583ecc607b06697 
+
   acl1:
     Type: AWS::EC2::NetworkAclEntry
     Properties:
