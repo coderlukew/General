@@ -118,7 +118,7 @@ Resources:
           VolumeSize: 8
       UserData:
         Fn::Base64:
-           #!/bin/bash
+          #!/bin/bash
           yum update -y
           yum install -y httpd
           systemctl start httpd
